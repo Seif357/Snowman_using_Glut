@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/glad.c
+/Libraries/include/glad/glad.h
+/Libraries/include/GLFW/glfw3.h
+/Libraries/include/GLFW/glfw3native.h
+/Libraries/include/KHR/khrplatform.h
+/Libraries/lib/glfw3.lib
