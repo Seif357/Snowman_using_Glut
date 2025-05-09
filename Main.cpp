@@ -1,7 +1,8 @@
-#include <windows.h>      // Must come before <GL/glut.h> on Windows
-#include <GL/glut.h>      // FreeGLUT/OpenGL Utility Toolkit
-#include <algorithm>  // at top
-
+#include<iostream>
+#include<windows.h>      // Must come before <GL/glut.h> on Windows
+#include<GL/glut.h>      // FreeGLUT/OpenGL Utility Toolkit
+#include<algorithm>  // at top
+#include<GLFW/glfw3.h> 
 
 static float angleX = 0.0f;
 static float angleY = 0.0f;
