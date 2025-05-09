@@ -5,20 +5,62 @@
 
 static float angleX = 0.0f;
 static float angleY = 0.0f;
+static float scaleFactor = 1.0f;
+static bool LeftDown = false;
 // Initialize OpenGL state
+// New static variables for improved mouse dragging
+static float clickMouseX = 0.0f;    // Mouse X position when left button was pressed
+static float clickMouseY = 0.0f;    // Mouse Y position when left button was pressed
+static float angleXAtClick = 0.0f;  // AngleX at the moment of left button press
+static float angleYAtClick = 0.0f;  // AngleY at the moment of left button press
 void initGL()
 {
     glEnable(GL_DEPTH_TEST);                // Enable depth buffering
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);    // Dark grey background
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.0f, 1.0f);   // Offset fill polys “into” the screen                  :contentReference[oaicite:0]{index=0}
+
+}
+// Mouse button callback
+void mouseButton(int button, int state, int x, int y)
+{
+    if (button == GLUT_LEFT_BUTTON) {
+        if (state == GLUT_DOWN) {
+            LeftDown = true;
+            // Record the initial mouse position and current angles when the button is pressed
+            clickMouseX = static_cast<float>(x);
+            clickMouseY = static_cast<float>(y);
+            angleXAtClick = angleX;
+            angleYAtClick = angleY;
+        }
+        else { // state == GLUT_UP
+            LeftDown = false;
+            // angleX and angleY now hold the orientation after the drag,
+            // which will be the starting point for the next drag if angleXAtClick/angleYAtClick are updated.
+        }
+    }
 }
 
-// Track cursor without pressing any buttons
-void passiveMotion(int x, int y)
+// Mouse motion callback (called when a button is pressed and mouse moves)
+void motionWithButton(int x, int y)
 {
-    // Map x,y to rotation (just an example)
-    angleY = (x - 320) * 0.1f;   // assuming 640×480 window
-    angleX = (y - 240) * 0.1f;
-    glutPostRedisplay();
+    if (!LeftDown)
+        return;
+
+    // Sensitivity factor for rotation speed, can be adjusted
+    float sensitivity = 0.1f;
+
+    // Calculate the difference in mouse position from where the button was pressed
+    float deltaMouseX = static_cast<float>(x) - clickMouseX;
+    float deltaMouseY = static_cast<float>(y) - clickMouseY;
+
+    // Update angles: new angle = angle at click time + rotation due to mouse drag
+    // Mouse Y movement typically controls rotation around X-axis (pitch)
+    // Mouse X movement typically controls rotation around Y-axis (yaw)
+    angleX = angleXAtClick + deltaMouseY * sensitivity;
+    angleY = angleYAtClick + deltaMouseX * sensitivity;
+
+    glutPostRedisplay(); // Request a redraw
 }
 // Handle special keys (arrows, F-keys…)
 void special(int key, int x, int y)
@@ -42,14 +84,13 @@ void special(int key, int x, int y)
 void keyboard(unsigned char key, int x, int y)
 {
     switch (key) {
-    case 27:             // ESC
-        exit(0);         // Quit on Esc
+    case 27: // ESC
+        exit(0);
+    case 'z': // increase scale
+        scaleFactor *= 1.1f;  // 10% bigger
         break;
-    case 'z':            // speed up rotation
-        glScalef(2, 2, 2);
-        break;
-    case 'x':            // slow down
-        glScalef(0.5, 0.5, 0.5);
+    case 'x': // decrease scale
+        scaleFactor *= 0.9f;  // 10% smaller
         break;
     default:
         break;
@@ -58,63 +99,28 @@ void keyboard(unsigned char key, int x, int y)
 }
 
 // Draw a cube centered at the origin, each face a different color
-void biggestCube()
-{
-    glBegin(GL_QUADS);
-    // Top face
-    glColor3f(0.8431372549019608f, 0.9215686274509804f, 0.9568627450980392f);
-    glVertex3f(-1, 1, -1);
-    glVertex3f(1, 1, -1);
-    glVertex3f(1, 1, 1);
-    glVertex3f(-1, 1, 1);
-    // Bottom face
-    glColor3f(0.8431372549019608f, 0.9215686274509804f, 0.9568627450980392f);
-    glVertex3f(-1, -1, 1);
-    glVertex3f(1, -1, 1);
-    glVertex3f(1, -1, -1);
-    glVertex3f(-1, -1, -1);
-    // Front face
-    glColor3f(0.8431372549019608f, 0.9215686274509804f, 0.9568627450980392f);
-    glVertex3f(-1, -1, 1);
-    glVertex3f(1, -1, 1);
-    glVertex3f(1, 1, 1);
-    glVertex3f(-1, 1, 1);
-
-    // Back face
-    glColor3f(0.8431372549019608f, 0.9215686274509804f, 0.9568627450980392f);
-    glVertex3f(-1, -1, -1);
-    glVertex3f(1, -1, -1);
-    glVertex3f(1, 1, -1);
-    glVertex3f(-1, 1, -1);
-    // Right face 
-    glColor3f(0.8431372549019608f, 0.9215686274509804f, 0.9568627450980392f);
-    glVertex3f(1, -1, -1);
-    glVertex3f(1, -1, 1);
-    glVertex3f(1, 1, 1);
-    glVertex3f(1, 1, -1);
-    // Left face
-    glColor3f(0.8431372549019608f, 0.9215686274509804f, 0.9568627450980392f);
-    glVertex3f(-1, 1, -1);
-    glVertex3f(-1, 1, 1);
-    glVertex3f(-1, -1, 1);
-    glVertex3f(-1, -1, -1);
-    glEnd();
-}
-// Display callback
 void display()
 {
+    
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
     glTranslatef(0, 0, -10);              // Move cube into view
     glRotatef(angleX, 1, 0, 0);
     glRotatef(angleY, 0, 1, 0);
     glPushMatrix();                    // save current transform
-    biggestCube();
+    glColor3f(0.8431372549019608f, 0.9215686274509804f, 0.9568627450980392f);
+    glScalef(scaleFactor, scaleFactor, scaleFactor);
+    glutSolidCube(2.0);
     glPopMatrix();
     glPushMatrix();
-    glTranslatef(0.0f, 1.5f, 0.0f); // lift it so its base sits on the top face
-    glScalef(0.8f, 0.8f, 0.8f);     // make it smaller than the bottom cube
-    biggestCube();
+    glTranslatef(0, 1.5f * scaleFactor, 0);   // lift relative to scaled base
+    glScalef(scaleFactor * 0.8f, scaleFactor * 0.8f, scaleFactor * 0.8f);
+    glutSolidCube(2.0);
+    glPopMatrix();
+    glPushMatrix();
+    glTranslatef(0, (1.5f + 1.5f * 0.8f) * scaleFactor, 0);
+    glScalef(scaleFactor * 0.7f, scaleFactor * 0.7f, scaleFactor * 0.7f);
+    glutSolidCube(2.0);
     glPopMatrix();
     glutSwapBuffers();
 }
@@ -145,7 +151,8 @@ int main(int argc, char** argv)
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);  // ASCII key events :contentReference[oaicite:0]{index=0}
     glutSpecialFunc(special);    // Non-ASCII key events :contentReference[oaicite:1]{index=1}
-    glutPassiveMotionFunc(passiveMotion);  // Cursor move events :contentReference[oaicite:3]{index=3}
+    glutMouseFunc(mouseButton);
+    glutMotionFunc(motionWithButton);
 
     glutMainLoop();
     return 0;
