@@ -1,39 +1,44 @@
-﻿#include <windows.h>
+#include <windows.h>
 #include <GL/glut.h>
 #include <cmath>
 #include <ctime>
 #include <vector>
+#include <algorithm>
+#include <random>
+
 
 // --- Animation & navigation state ---
 static float armAnimAngle = 0;
 static float armAnimPhase = 0.0f;
-
 float snowmanX = 0.0f, snowmanZ = 0.0f;
 float headingDeg = 0.0f; // y-axis, 0 = forward along -Z
-
-// Movement speed/rot
 float moveSpeed = 2.5f;  // units/sec
 float rotSpeed = 90.0f;  // deg/sec
 
-// Ground tile parameters
-float groundTileSize = 7.0f;
-int groundRepeat = 7;  // (Ensures a big local patch: 7x7=49 tiles)
+// Camera orbit/zoom parameters
 
-// Step animation phase (for footsteps)
-float footstepPhase = 0.0f;
-
-// Camera and transform
 static float angleX = 15.0f, angleY = 25.0f;
 static float scaleFactor = 1.0f;
+
+// Ground tile parameters
+float groundTileSize = 25.0f;
+int groundRepeat = 10;  // Ensures a big local patch: 7x7=49 tiles
+
+float footstepPhase = 0.0f;
 static bool LeftDown = false;
 static float clickMouseX = 0.0f, clickMouseY = 0.0f;
 static float angleXAtClick = 0.0f, angleYAtClick = 0.0f;
-
-// GLU quadric object for cones/cylinders etc.
 GLUquadric* quad = nullptr;
 
-// --- Key controls
+// Controls
 bool keyW = false, keyS = false, keyA = false, keyD = false;
+bool keyH = false;
+
+// --- Sword slash fields
+bool swordSlashing = false;
+float swordSlashTimer = 0.0f;
+const float swordSlashDuration = 0.35f; // seconds per slash
+const float swordSlashMaxAngle = 100.0f; // degrees
 
 // --- Footstep particle system ---
 struct Particle {
@@ -41,12 +46,52 @@ struct Particle {
     float age, life;
 };
 static std::vector<Particle> particles;
+const float footTrackX = 0.45f;
 
-// For alternating left/right tracks
-const float footTrackX = 0.45f;   // Left/right side offset (body width)
-const float footTrackZ = -1.36f;  // Not used in world coords anymore
+///////////////// ENVIRONMENT
+struct Tree { float x, z, h, r; };
+struct IceBlock { float x, z, s; };
+std::vector<Tree> trees;
+std::vector<IceBlock> iceblocks;
 
-// --- Keyboard handlers
+void generateEnvironment() {
+    trees.clear();
+    iceblocks.clear();
+    std::mt19937 rng(9047);
+    std::uniform_real_distribution<float> dist(-45.0f, 45.0f);
+    std::uniform_real_distribution<float> rad(1.6f, 3.7f);
+    std::uniform_real_distribution<float> hgt(2.6f, 5.5f);
+    for (int i = 0; i < 38; ++i) {
+        float x = dist(rng), z = dist(rng);
+        if (std::sqrt(x * x + z * z) < 7.5f) continue; // keep open clearing
+        Tree t; t.x = x; t.z = z; t.h = hgt(rng); t.r = rad(rng);
+        trees.push_back(t);
+    }
+    std::uniform_real_distribution<float> bs(2.0f, 3.2f);
+    for (int i = 0; i < 12; ++i) {
+        float x = dist(rng), z = dist(rng);
+        if (std::sqrt(x * x + z * z) < 8.5f) continue;
+        IceBlock b; b.x = x; b.z = z; b.s = bs(rng);
+        iceblocks.push_back(b);
+    }
+}
+
+void drawPineTree(float h, float r) {
+    // Brown trunk
+    glColor3f(0.33f, 0.20f, 0.12f);
+    glPushMatrix();
+    glTranslatef(0, h * 0.15f, 0);
+    glRotatef(270, 1, 0, 0);
+    gluCylinder(quad, r * 0.20, r * 0.12, h * 0.3f, 8, 2);
+    // Green cone
+    glColor3f(0.19f, 0.41f, 0.1f); // deep pine
+    glTranslatef(0, h * 0.1f, 1); // Move to top of trunk
+    glRotatef(360, 1, 0, 0);
+    glutSolidCone(r, h * 0.78, 16, 3);
+    glPopMatrix();
+}
+
+
 void keyboard(unsigned char key, int x, int y)
 {
     switch (key) {
@@ -57,6 +102,8 @@ void keyboard(unsigned char key, int x, int y)
     case 's': keyS = true; break;
     case 'a': keyA = true; break;
     case 'd': keyD = true; break;
+    case 'h': keyH = true; break;
+
     }
     glutPostRedisplay();
 }
@@ -67,6 +114,8 @@ void keyboardUp(unsigned char key, int x, int y)
     case 's': keyS = false; break;
     case 'a': keyA = false; break;
     case 'd': keyD = false; break;
+    case 'h': keyH = false; break;
+
     }
 }
 void mouseButton(int button, int state, int x, int y)
@@ -83,6 +132,12 @@ void mouseButton(int button, int state, int x, int y)
             LeftDown = false;
         }
     }
+    // Mouse wheel zoom (most freeglut/GLUT implementations)
+    if (state == GLUT_DOWN) {
+        if (button == 3) scaleFactor *= 0.9f;
+        if (button == 4) scaleFactor *= 1.1f;
+    }
+    glutPostRedisplay();
 }
 void motionWithButton(int x, int y)
 {
@@ -107,7 +162,7 @@ void special(int key, int x, int y)
     glutPostRedisplay();
 }
 
-// --- Animation, movement, and particles ---
+
 void idle()
 {
     static float lastTime = 0;
@@ -115,37 +170,46 @@ void idle()
     float delta = time - lastTime;
     lastTime = time;
 
-    // --- Rotation (A/D keys): ---
+    // A/D turn snowman's body (not the camera!)
     if (keyA) headingDeg += rotSpeed * delta;
     if (keyD) headingDeg -= rotSpeed * delta;
 
-    // --- Movement (W/S keys): ---
+    // Movement: move in SNOWMAN's heading
     bool moving = false;
     float walkDir = 0.0f;
-    if (keyW) { walkDir += 1.0f; moving = true; }
-    if (keyS) { walkDir -= 1.0f; moving = true; }
+    if (keyS) { walkDir += 1.0f; moving = true; }
+    if (keyW) { walkDir -= 1.0f; moving = true; }
     if (walkDir != 0.0f) {
-        float rad = headingDeg * 3.1415926f / 180.0f;
+        float rad = -headingDeg * 3.1415926f / 180.0f;
         snowmanX += sinf(rad) * moveSpeed * delta * walkDir;
-        snowmanZ += -cosf(rad) * moveSpeed * delta * walkDir; // -cos for OpenGL -Z fwd
-        armAnimPhase += delta * 4.0f; // Animate only when moving
+        snowmanZ += -cosf(rad) * moveSpeed * delta * walkDir;
+        armAnimPhase += delta * 4.0f;
         footstepPhase += delta * 2.9f;
     }
 
-    armAnimAngle = 28.0f * sinf(armAnimPhase); // 80% original amplitude
+    armAnimAngle = 28.0f * sinf(armAnimPhase);
 
-    // --- Particle emission: alternate left/right on each footstep (world coords) ---
+    // Sword slash
+    if (keyH && !swordSlashing) {
+        swordSlashing = true;
+        swordSlashTimer = 0.0f;
+    }
+    if (swordSlashing) {
+        swordSlashTimer += delta;
+        if (swordSlashTimer >= swordSlashDuration) {
+            swordSlashing = false;
+            swordSlashTimer = 0.0f;
+        }
+    }
+
     static float phaseRef = 0.0f;
     static bool lastFootLeft = false;
     float footSin = sinf(footstepPhase * 3.1415f);
-    // Each time the step sine crosses zero from negative: emit
     if (moving && footSin > 0.45f && phaseRef <= 0.45f) {
-        // One footprint, sync with walk cycle
         Particle p;
         lastFootLeft = !lastFootLeft;
         float rad = headingDeg * 3.1415926f / 180.0f;
         float side = lastFootLeft ? -footTrackX : footTrackX;
-        // Left/right offset perpendicular to heading
         p.x = snowmanX + cosf(rad) * side;
         p.y = 0.0f;
         p.z = snowmanZ + sinf(rad) * side;
@@ -155,10 +219,10 @@ void idle()
     }
     phaseRef = footSin;
 
-    // --- Update + prune particles ---
     for (size_t i = 0; i < particles.size(); ) {
         particles[i].age += delta;
-        particles[i].y += delta * 0.14f; // Float up gently
+        particles[i].y += delta * 0.14f;
+
         if (particles[i].age > particles[i].life) {
             particles.erase(particles.begin() + i);
         }
@@ -170,17 +234,17 @@ void idle()
     glutPostRedisplay();
 }
 
-// --- GL setup ---
 void initGL()
 {
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.83f, 0.92f, 1.0f, 1.0f); // snow sky light blue
+    glClearColor(0.83f, 0.92f, 1.0f, 1.0f);
+
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(1.0f, 1.0f);
     glEnable(GL_COLOR_MATERIAL);
     glEnable(GL_NORMALIZE);
     glShadeModel(GL_SMOOTH);
-    // Lighting setup
+
     GLfloat ambient[] = { 0.5, 0.5, 0.58, 1.0 };
     GLfloat diffuse[] = { 0.9, 0.9, 1.0, 1.0 };
     GLfloat specular[] = { 0.2,0.2,0.6,1.0 };
@@ -194,7 +258,7 @@ void initGL()
     quad = gluNewQuadric();
 }
 
-// Cylinder/Disk for hat etc.
+
 void solidCylinder(GLUquadric* q, double base, double top, double height, int slices, int stacks)
 {
     gluCylinder(q, base, top, height, slices, stacks);
@@ -208,7 +272,7 @@ void solidCylinder(GLUquadric* q, double base, double top, double height, int sl
     glPopMatrix();
 }
 
-// --- The sword (unchanged)
+
 void drawMinecraftDiamondSword(float voxel = 0.13f, int thickness = 2, int holdX = 4, int holdY = 14, int holdZ = 0)
 {
     const int w = 17, h = 17;
@@ -232,11 +296,12 @@ void drawMinecraftDiamondSword(float voxel = 0.13f, int thickness = 2, int holdX
         {1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
     };
     float colors[5][3] = {
-        {0,0,0},                   // Not drawn
-        {0.07f,0.26f,0.26f},       // Teal-black border
-        {0.23f,0.98f,0.91f},       // Diamond blue
-        {0.45f,0.32f,0.11f},        // Brown (handle)
-        {0.1608f, 0.7725f, 0.6588f} // diamond half
+        {0,0,0},
+        {0.07f,0.26f,0.26f},
+        {0.23f,0.98f,0.91f},
+        {0.45f,0.32f,0.11f},
+        {0.1608f, 0.7725f, 0.6588f}
+
     };
     glPushMatrix();
     glTranslatef(-(w / 2.0f) * voxel, -(h / 2.0f) * voxel, -thickness / 2.0f * voxel);
@@ -266,7 +331,8 @@ void drawSnowCube(float size)
     glutSolidCube(size);
     glColor3f(0.86f, 0.95f, 0.98f);
     glLineWidth(3.0f);
-    glutWireCube(size + 0.001f); // epsilon bigger to avoid Z-fight
+    glutWireCube(size + 0.001f);
+
     glLineWidth(1.0f);
     glPopMatrix();
 }
@@ -274,7 +340,8 @@ void drawSnowCube(float size)
 // Carrot
 void drawCarrotNose(float length, float radius)
 {
-    glColor3f(1.0f, 0.55f, 0.1f); // carrot orange
+    glColor3f(1.0f, 0.55f, 0.1f);
+
     glPushMatrix();
     gluCylinder(quad, radius, 0.0, length, 20, 3);
     glPopMatrix();
@@ -283,28 +350,23 @@ void drawCarrotNose(float length, float radius)
 // Branch hand
 void drawBranchHand(float baseLen, float baseRad)
 {
-    glColor3f(0.45f, 0.29f, 0.1f); // wood brown
+    glColor3f(0.45f, 0.29f, 0.1f);
     glPushMatrix();
     gluCylinder(quad, baseRad, baseRad * 0.8, baseLen, 8, 2);
-
-    // Upper twig
     glPushMatrix();
     glTranslatef(0, 0, baseLen * 0.75f);
     glRotatef(-40, 1, 0, 0);
-    gluCylinder(quad, baseRad * 0.3, baseRad * 0.2, baseLen * 0.25, 6, 2);
+    gluCylinder(quad, baseRad * 0.3f, baseRad * 0.2f, baseLen * 0.25f, 6, 2);
     glPopMatrix();
-
-    // Lower twig
     glPushMatrix();
     glTranslatef(0, 0, baseLen * 0.55f);
     glRotatef(45, 1, 0, 0);
-    gluCylinder(quad, baseRad * 0.2, 0.08f * baseRad, baseLen * 0.22f, 4, 2);
+    gluCylinder(quad, baseRad * 0.2f, 0.08f * baseRad, baseLen * 0.22f, 4, 2);
     glPopMatrix();
-
     glPopMatrix();
 }
 
-// Snowy ground: subtle blue/white random "snow"
+
 void drawIceField(float size, int strips)
 {
     GLfloat snow_amb[] = { 0.86f,0.92f,1.0f,1.0f };
@@ -336,15 +398,26 @@ void drawIceField(float size, int strips)
     }
 }
 
-// --- Draw Everything ---
 void display()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // --- Camera: orbit (angleX/Y, mouse) ---
+    float camY = 4.0f;
+    float camDist = 9.0f * scaleFactor;
+    float cameraOrbitYaw = angleY;
+    float camOrbitRad = cameraOrbitYaw * 3.1415926f / 180.0f;
+    float camPitchRad = angleX * 3.1415926f / 180.0f;
+    float camX = snowmanX - sinf(camOrbitRad) * cosf(camPitchRad) * camDist;
+    float camZ = snowmanZ + cosf(camOrbitRad) * cosf(camPitchRad) * camDist;
+    float camH = camY + sinf(camPitchRad) * camDist;
+
     glLoadIdentity();
-    // Camera
-    glTranslatef(0, -1.1f, -12.0f);
-    glRotatef(angleX, 1, 0, 0);
-    glRotatef(angleY, 0, 1, 0);
+    gluLookAt(
+        camX, camH, camZ,
+        snowmanX, camY, snowmanZ,
+        0, 1, 0);
+
     glScalef(scaleFactor, scaleFactor, scaleFactor);
 
     // --- Endless ground tiles ---
@@ -363,19 +436,37 @@ void display()
         }
     }
 
-    // --- SNOW PARTICLES / TRACKS ---
+    // --- Draw trees & iceblocks
+    for (const Tree& t : trees) {
+        glPushMatrix();
+        glTranslatef(t.x, 0, t.z);
+        drawPineTree(t.h, t.r);
+        glPopMatrix();
+    }
+    for (const IceBlock& b : iceblocks) {
+        glPushMatrix();
+        glColor3f(0.63f, 0.78f, 0.98f);
+        glTranslatef(b.x, b.s / 2.f, b.z);
+        glutSolidCube(b.s);
+        glColor3f(0.7f, 0.85f, 1.0f);
+        glutWireCube(b.s * 1.01f);
+        glPopMatrix();
+    }
+
+
     for (const Particle& p : particles) {
         float alpha = 1.0f - (p.age / p.life);
         glPushMatrix();
         glTranslatef(p.x, p.y + 0.02f, p.z);
         glDisable(GL_LIGHTING);
-        glColor4f(0.91f, 0.97f, 1.0f, 0.38f * alpha);
+        glColor4f(0.96f, 0.95f, 0.91f, 0.38f * alpha);
+
         glutSolidSphere(0.12f * alpha, 8, 8);
         glEnable(GL_LIGHTING);
         glPopMatrix();
     }
 
-    // --- Draw snowman centered at (snowmanX, 0, snowmanZ), rotated by heading ---
+    // --- Sno
     glPushMatrix();
     glTranslatef(snowmanX, 0.0f, snowmanZ);
     glRotatef(headingDeg, 0, 1, 0);
@@ -384,43 +475,34 @@ void display()
     float bodySize = 1.5f;
     float headSize = 1.1f;
 
-    // Bottom
     glPushMatrix();
     glTranslatef(0, baseSize / 2, 0);
     drawSnowCube(baseSize);
     glPopMatrix();
-
-    // Torso
     glPushMatrix();
     glTranslatef(0, baseSize + bodySize / 2 - 0.12f, 0);
     drawSnowCube(bodySize);
     glPopMatrix();
-
-    // Head
-    glPushMatrix();
     float headY = baseSize + bodySize - 0.24f + headSize / 2;
+    glPushMatrix();
     glTranslatef(0, headY, 0);
     drawSnowCube(headSize);
     glPopMatrix();
 
-    // --- Eyes ---
     float eyeOffsetY = headY + headSize * 0.18f;
     float eyeOffsetZ = headSize / 2 + 0.01f;
     float eyeOffsetX = headSize * 0.21f;
-
     glPushMatrix();
     glColor3f(0, 0, 0);
     glTranslatef(-eyeOffsetX, eyeOffsetY, eyeOffsetZ);
     glutSolidSphere(0.08f * headSize, 15, 15);
     glPopMatrix();
-
     glPushMatrix();
     glColor3f(0, 0, 0);
     glTranslatef(eyeOffsetX, eyeOffsetY, eyeOffsetZ);
     glutSolidSphere(0.08f * headSize, 15, 15);
     glPopMatrix();
 
-    // --- Carrot Nose ---
     float noseLen = 0.43f;
     float noseRadius = 0.10f;
     glPushMatrix();
@@ -428,7 +510,7 @@ void display()
     drawCarrotNose(noseLen, noseRadius);
     glPopMatrix();
 
-    float armY = baseSize + bodySize * 0.5f - 0.05f;
+float armY = baseSize + bodySize * 0.5f - 0.05f;
     float armLeftX = -(bodySize / 2 + 0.01f);
     float armRightX = (bodySize / 2 + 0.01f);
     float armZ = 0;
@@ -454,27 +536,31 @@ void display()
     glTranslatef(0, 0, 1.10f);
     glRotatef(-40, 0, 0, 1);
     glRotatef(270, 1, 0, 0);
+
+    float swordExtra = 0.0f;
+    if (swordSlashing) {
+        float t = swordSlashTimer / swordSlashDuration;
+        float curve = std::sin(t * 3.14159f);
+        swordExtra = swordSlashMaxAngle * curve;
+    }
+    glRotatef(-swordExtra, 0, 1, 0);
     drawMinecraftDiamondSword(0.14f);
     glPopMatrix();
+
     drawBranchHand(1.25f, 0.09f);
     glPopMatrix();
 
-
-    // --- Hat ---
     float brimHeight = headSize * 0.07f;
     float topHeight = headSize * 0.62f;
     float brimY = headY + headSize / 2 + 0.01f;
-    float topY = brimY + brimHeight;
 
-    // Brim
     glPushMatrix();
     glColor3f(0.07f, 0.07f, 0.07f);
     glTranslatef(0, brimY, 0);
     glRotatef(-90, 1, 0, 0);
     solidCylinder(quad, headSize * 0.56f, headSize * 0.56f, brimHeight, 30, 3);
     glPopMatrix();
-
-    // Top
+    // Top of Hat
     glPushMatrix();
     glColor3f(0.07f, 0.07f, 0.07f);
     glTranslatef(0, brimY + brimHeight, 0);
@@ -482,7 +568,8 @@ void display()
     solidCylinder(quad, headSize * 0.32f, headSize * 0.32f, topHeight, 30, 6);
     glPopMatrix();
 
-    glPopMatrix(); // End snowman matrix
+    glPopMatrix(); // End of snowman
+
 
     glutSwapBuffers();
 }
@@ -502,9 +589,11 @@ int main(int argc, char** argv)
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGB);
     glutInitWindowSize(900, 600);
-    glutCreateWindow("Advanced OpenGL Minecraft-Style Snowman - WASD Endless World");
+    glutCreateWindow("Minecraft Snow Man");
+
 
     initGL();
+    generateEnvironment();
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
@@ -514,7 +603,7 @@ int main(int argc, char** argv)
     glutMotionFunc(motionWithButton);
     glutIdleFunc(idle);
     glutMainLoop();
-    // Never reached:
-    // if (quad) gluDeleteQuadric(quad);
+    // Optional: if (quad) gluDeleteQuadric(quad);
+
     return 0;
 }
