@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <random>
 
+
 // --- Animation & navigation state ---
 static float armAnimAngle = 0;
 static float armAnimPhase = 0.0f;
@@ -15,6 +16,7 @@ float moveSpeed = 2.5f;  // units/sec
 float rotSpeed = 90.0f;  // deg/sec
 
 // Camera orbit/zoom parameters
+
 static float angleX = 15.0f, angleY = 25.0f;
 static float scaleFactor = 1.0f;
 
@@ -89,6 +91,7 @@ void drawPineTree(float h, float r) {
     glPopMatrix();
 }
 
+
 void keyboard(unsigned char key, int x, int y)
 {
     switch (key) {
@@ -100,6 +103,7 @@ void keyboard(unsigned char key, int x, int y)
     case 'a': keyA = true; break;
     case 'd': keyD = true; break;
     case 'h': keyH = true; break;
+
     }
     glutPostRedisplay();
 }
@@ -111,6 +115,7 @@ void keyboardUp(unsigned char key, int x, int y)
     case 'a': keyA = false; break;
     case 'd': keyD = false; break;
     case 'h': keyH = false; break;
+
     }
 }
 void mouseButton(int button, int state, int x, int y)
@@ -156,6 +161,7 @@ void special(int key, int x, int y)
     }
     glutPostRedisplay();
 }
+
 
 void idle()
 {
@@ -216,6 +222,7 @@ void idle()
     for (size_t i = 0; i < particles.size(); ) {
         particles[i].age += delta;
         particles[i].y += delta * 0.14f;
+
         if (particles[i].age > particles[i].life) {
             particles.erase(particles.begin() + i);
         }
@@ -231,11 +238,13 @@ void initGL()
 {
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.83f, 0.92f, 1.0f, 1.0f);
+
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(1.0f, 1.0f);
     glEnable(GL_COLOR_MATERIAL);
     glEnable(GL_NORMALIZE);
     glShadeModel(GL_SMOOTH);
+
     GLfloat ambient[] = { 0.5, 0.5, 0.58, 1.0 };
     GLfloat diffuse[] = { 0.9, 0.9, 1.0, 1.0 };
     GLfloat specular[] = { 0.2,0.2,0.6,1.0 };
@@ -249,6 +258,7 @@ void initGL()
     quad = gluNewQuadric();
 }
 
+
 void solidCylinder(GLUquadric* q, double base, double top, double height, int slices, int stacks)
 {
     gluCylinder(q, base, top, height, slices, stacks);
@@ -261,6 +271,7 @@ void solidCylinder(GLUquadric* q, double base, double top, double height, int sl
     gluDisk(q, 0.0, top, slices, 1);
     glPopMatrix();
 }
+
 
 void drawMinecraftDiamondSword(float voxel = 0.13f, int thickness = 2, int holdX = 4, int holdY = 14, int holdZ = 0)
 {
@@ -290,6 +301,7 @@ void drawMinecraftDiamondSword(float voxel = 0.13f, int thickness = 2, int holdX
         {0.23f,0.98f,0.91f},
         {0.45f,0.32f,0.11f},
         {0.1608f, 0.7725f, 0.6588f}
+
     };
     glPushMatrix();
     glTranslatef(-(w / 2.0f) * voxel, -(h / 2.0f) * voxel, -thickness / 2.0f * voxel);
@@ -320,6 +332,7 @@ void drawSnowCube(float size)
     glColor3f(0.86f, 0.95f, 0.98f);
     glLineWidth(3.0f);
     glutWireCube(size + 0.001f);
+
     glLineWidth(1.0f);
     glPopMatrix();
 }
@@ -328,6 +341,7 @@ void drawSnowCube(float size)
 void drawCarrotNose(float length, float radius)
 {
     glColor3f(1.0f, 0.55f, 0.1f);
+
     glPushMatrix();
     gluCylinder(quad, radius, 0.0, length, 20, 3);
     glPopMatrix();
@@ -352,7 +366,7 @@ void drawBranchHand(float baseLen, float baseRad)
     glPopMatrix();
 }
 
-// Snowy ground
+
 void drawIceField(float size, int strips)
 {
     GLfloat snow_amb[] = { 0.86f,0.92f,1.0f,1.0f };
@@ -439,19 +453,20 @@ void display()
         glPopMatrix();
     }
 
-    // --- Footstep Particles
+
     for (const Particle& p : particles) {
         float alpha = 1.0f - (p.age / p.life);
         glPushMatrix();
         glTranslatef(p.x, p.y + 0.02f, p.z);
         glDisable(GL_LIGHTING);
         glColor4f(0.96f, 0.95f, 0.91f, 0.38f * alpha);
+
         glutSolidSphere(0.12f * alpha, 8, 8);
         glEnable(GL_LIGHTING);
         glPopMatrix();
     }
 
-    // --- Snowman
+    // --- Sno
     glPushMatrix();
     glTranslatef(snowmanX, 0.0f, snowmanZ);
     glRotatef(headingDeg, 0, 1, 0);
@@ -555,6 +570,7 @@ float armY = baseSize + bodySize * 0.5f - 0.05f;
 
     glPopMatrix(); // End of snowman
 
+
     glutSwapBuffers();
 }
 
@@ -575,6 +591,7 @@ int main(int argc, char** argv)
     glutInitWindowSize(900, 600);
     glutCreateWindow("Minecraft Snow Man");
 
+
     initGL();
     generateEnvironment();
     glutDisplayFunc(display);
@@ -587,5 +604,6 @@ int main(int argc, char** argv)
     glutIdleFunc(idle);
     glutMainLoop();
     // Optional: if (quad) gluDeleteQuadric(quad);
+
     return 0;
 }
