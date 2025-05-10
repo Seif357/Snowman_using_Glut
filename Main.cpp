@@ -360,6 +360,7 @@ void display()
     float brimY = headY + headSize / 2 + 0.01f; // base of the brim
     float topY = brimY + brimHeight;           // base of top at the top of the brim
 
+	//Kanzen
     // Brim
     glPushMatrix();
     glColor3f(0.07f, 0.07f, 0.07f); // jet black
