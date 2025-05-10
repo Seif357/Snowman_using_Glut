@@ -48,38 +48,50 @@ void solidCylinder(GLUquadric* q, double base, double top, double height, int sl
     glPopMatrix();
 }
 
-void drawMinecraftDiamondSword(float voxel = 0.12f, int thickness = 3) {
-    const int h = 17, w = 17;
-    // 0: empty, 1: handle, 2: blade, 3: crossguard gold, 4: blade highlight
-    int sword[h][w] = {
-        {0,0,0,0,0,0,0,2,4,0,0,0,0,0,0,0,0},
-        {0,0,0,0,0,0,2,2,2,4,0,0,0,0,0,0,0},
-        {0,0,0,0,0,2,2,2,2,2,4,0,0,0,0,0,0},
-        {0,0,0,0,2,2,2,2,2,2,2,4,0,0,0,0,0},
-        {0,0,0,2,2,2,2,2,2,2,2,2,4,0,0,0,0},
-        {0,0,2,2,2,2,2,2,2,2,2,2,2,4,0,0,0},
-        {0,2,2,2,2,2,2,2,2,2,2,2,2,2,4,0,0},
-        {2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,4,0},
-        {0,3,3,0,2,2,2,3,3,2,2,2,0,3,3,0,0}, // crossguard
-        {0,3,1,3,0,0,3,1,1,3,0,0,3,1,3,0,0}, // hilt
-        {0,0,3,1,3,0,0,3,1,3,0,0,3,1,3,0,0}, // hilt
-        {0,0,0,3,1,3,0,0,3,1,3,0,0,3,3,0,0},
-        {0,0,0,0,3,1,3,0,0,3,1,3,0,0,0,0,0},
-        {0,0,0,0,0,3,1,3,0,0,3,1,3,0,0,0,0},
-        {0,0,0,0,0,0,3,1,3,0,0,3,1,3,0,0,0},
-        {0,0,0,0,0,0,0,3,1,3,0,0,3,3,0,0,0},
-        {0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0}
+void drawMinecraftDiamondSword(float voxel = 0.13f, int thickness = 2, int holdX = 4, int holdY = 14, int holdZ = 0)
+{
+    // Copied from original Minecraft diamond sword sprite (vertical)
+    const int w = 17, h = 17;
+    const int sword[17][17] = {
+        {0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1},
+        {0,0,0,0,0,0,0,0,0,0,0,0,0,1,2,4,1},
+        {0,0,0,0,0,0,0,0,0,0,0,0,1,2,4,2,1},
+        {0,0,0,0,0,0,0,0,0,0,0,1,2,4,2,1,0},
+        {0,0,0,0,0,0,0,0,0,0,1,2,4,2,1,0,0},
+        {0,0,0,0,0,0,0,0,0,1,2,4,2,1,0,0,0},
+        {0,0,0,0,0,0,0,0,1,2,4,2,1,0,0,0,0},
+        {0,0,1,1,0,0,0,1,2,4,2,1,0,0,0,0,0},
+        {0,0,1,4,1,0,1,2,4,2,1,0,0,0,0,0,0},
+        {0,0,0,1,4,1,2,4,2,1,0,0,0,0,0,0,0},
+        {0,0,0,1,4,1,4,2,1,0,0,0,0,0,0,0,0},
+        {0,0,0,0,1,4,1,1,0,0,0,0,0,0,0,0,0},
+        {0,0,0,3,3,1,4,4,1,0,0,0,0,0,0,0,0},
+        {0,0,3,3,3,0,1,1,4,1,0,0,0,0,0,0,0},
+        {1,1,3,3,0,0,0,0,1,1,0,0,0,0,0,0,0},
+        {1,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+        {1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0},
+
     };
+
+
+    // Colors: 0=empty, 1=edge, 2=diamond blade, 3=brown handle
     float colors[5][3] = {
-        {0,0,0},                        // 0: empty (not drawn)
-        {0.55f,0.31f,0.07f},            // 1: brown (handle)
-        {0.16f,0.87f,0.83f},            // 2: blade (diamond cyan)
-        {0.72f,0.67f,0.22f},            // 3: gold (crossguard)
-        {0.72f,1.0f,0.97f}              // 4: blade highlight
+        {0,0,0},                   // Not drawn
+        {0.07f,0.26f,0.26f},       // Teal-black border
+        {0.23f,0.98f,0.91f},       // Diamond blue
+        {0.45f,0.32f,0.11f},        // Brown (handle)
+        {0.1608f, 0.7725f, 0.6588f} // diamond half
     };
-    // Center the sword at (0,0,0) tip at "0,0"
+
+    // Center the sword at (0,0,0)
     glPushMatrix();
     glTranslatef(-(w / 2.0f) * voxel, -(h / 2.0f) * voxel, -thickness / 2.0f * voxel);
+
+    float px = (holdX - w / 2.0f) * voxel;
+    float py = (holdY - h / 2.0f) * voxel;
+    float pz = (holdZ - thickness / 2.0f) * voxel;
+    glTranslatef(-px, -py, -pz);
+
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             int c = sword[y][x];
